@@ -2,3 +2,4 @@
 .venv312 
 __pycache__ 
 *.pyc 
+backend/.env
