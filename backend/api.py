@@ -196,3 +196,26 @@ def get_worklog(employee_id: int, month: int, year: int):
     calendar = wl_service.get_monthly_calendar(employee_id, month, year)
     return {"employee_id": employee_id, "month": month, "year": year, "days": calendar}
     return {"employee_id": employee_id, "month": month, "year": year, "days": calendar}
+
+
+@app.get("/payments")
+def get_payments():
+    return [
+        {
+            "id": p.revenue_id,
+            "amount": float(p.amount),
+            "date": str(p.payment_date)
+        }
+        for p in payments
+    ]
+
+@app.get("/expense-payments")
+def get_expense_payments():
+    return [
+        {
+            "id": ep.expense_id,
+            "amount": float(ep.amount),
+            "date": str(ep.payment_date)
+        }
+        for ep in expense_payments
+    ]
