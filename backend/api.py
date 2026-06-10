@@ -230,53 +230,113 @@ def get_expense_payments():
 # POST ENDPOINTS — הוספת נתונים
 # =========================
 
+class RevenueIn(BaseModel):
+    amount: float
+    vat_included: bool
+    transaction_date: str
+    description: str
+
+class ExpenseIn(BaseModel):
+    amount: float
+    vat_included: bool
+    transaction_date: str
+    description: str
+    is_deductible: bool
+
+class EmployeeIn(BaseModel):
+    employee_name: str
+    salary_type: str
+    rate: float
+    calculation_type: str = "manual"
+
+class PaymentIn(BaseModel):
+    revenue_id: int
+    amount: float
+    payment_date: str
+
+class ExpensePaymentIn(BaseModel):
+    expense_id: int
+    amount: float
+    payment_date: str
+
+class WorkLogIn(BaseModel):
+    employee_id: int
+    work_date: str
+    worked: bool = True
+    units: float = 1
+
 @app.post("/revenues")
-def add_revenue(amount: float, vat_included: bool, transaction_date: str, description: str):
+def add_revenue(data: RevenueIn):
     try:
         result = supabase.table("revenues").insert({
-            "amount": amount,
-            "vat_included": vat_included,
-            "transaction_date": transaction_date,
-            "description": description
+            "amount": data.amount,
+            "vat_included": data.vat_included,
+            "transaction_date": data.transaction_date,
+            "description": data.description
         }).execute()
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/expenses")
-def add_expense(amount: float, vat_included: bool, transaction_date: str,
-                description: str, is_deductible: bool):
+def add_expense(data: ExpenseIn):
     try:
         result = supabase.table("expenses").insert({
-            "amount": amount,
-            "vat_included": vat_included,
-            "transaction_date": transaction_date,
-            "description": description,
-            "is_deductible": is_deductible
+            "amount": data.amount,
+            "vat_included": data.vat_included,
+            "transaction_date": data.transaction_date,
+            "description": data.description,
+            "is_deductible": data.is_deductible
+        }).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/employees")
+def add_employee(data: EmployeeIn):
+    try:
+        result = supabase.table("employees").insert({
+            "employee_name": data.employee_name,
+            "salary_type": data.salary_type,
+            "rate": data.rate,
+            "calculation_type": data.calculation_type
         }).execute()
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/payments")
-def add_payment(revenue_id: int, amount: float, payment_date: str):
+def add_payment(data: PaymentIn):
     try:
         result = supabase.table("payments").insert({
-            "revenue_id": revenue_id,
-            "amount": amount,
-            "payment_date": payment_date
+            "revenue_id": data.revenue_id,
+            "amount": data.amount,
+            "payment_date": data.payment_date
         }).execute()
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/expense-payments")
-def add_expense_payment(expense_id: int, amount: float, payment_date: str):
+def add_expense_payment(data: ExpensePaymentIn):
     try:
         result = supabase.table("expense_payments").insert({
-            "expense_id": expense_id,
-            "amount": amount,
-            "payment_date": payment_date
+            "expense_id": data.expense_id,
+            "amount": data.amount,
+            "payment_date": data.payment_date
+        }).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/worklog")
+def add_worklog(data: WorkLogIn):
+    try:
+        result = supabase.table("work_logs").insert({
+            "employee_id": data.employee_id,
+            "work_date": data.work_date,
+            "worked": data.worked,
+            "units": data.units
         }).execute()
         return {"success": True, "data": result.data}
     except Exception as e:
