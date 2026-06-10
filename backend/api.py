@@ -308,3 +308,56 @@ def add_worklog(employee_id: int, work_date: str, worked: bool = True, units: fl
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/report/balances")
+def get_balances(month: int, year: int):
+    try:
+        # טעינת נתונים מ-Supabase
+        all_revenues = load_revenues()
+        all_payments = load_payments()
+        all_expenses = load_expenses()
+        all_expense_payments = load_expense_payments()
+
+        # סינון לפי חודש ושנה
+        monthly_revenues = [
+            r for r in all_revenues
+            if r.transaction_date.month == month
+            and r.transaction_date.year == year
+        ]
+        monthly_expenses = [
+            e for e in all_expenses
+            if e.transaction_date.month == month
+            and e.transaction_date.year == year
+        ]
+        monthly_payments = [
+            p for p in all_payments
+            if p.payment_date.month == month
+            and p.payment_date.year == year
+        ]
+        monthly_expense_payments = [
+            ep for ep in all_expense_payments
+            if ep.payment_date.month == month
+            and ep.payment_date.year == year
+        ]
+
+        # חישוב לקוחות חייבים
+        total_revenues = sum(r.amount for r in monthly_revenues)
+        total_payments_in = sum(p.amount for p in monthly_payments)
+        customers_debt = total_revenues - total_payments_in
+
+        # חישוב תשלום לספקים
+        total_expenses = sum(e.amount for e in monthly_expenses)
+        total_payments_out = sum(ep.amount for ep in monthly_expense_payments)
+        suppliers_debt = total_expenses - total_payments_out
+
+        return {
+            "customers_debt": float(customers_debt),
+            "suppliers_debt": float(suppliers_debt),
+            "total_revenues": float(total_revenues),
+            "total_payments_in": float(total_payments_in),
+            "total_expenses": float(total_expenses),
+            "total_payments_out": float(total_payments_out),
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
