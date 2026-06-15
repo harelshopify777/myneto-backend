@@ -80,7 +80,7 @@ class ExpensePayment:
         self.amount = amount
         self.payment_date = payment_date
 
-class IncomeTaxPayment: # מעקב אחר תשלום מיסים
+class IncomeTaxPayment:
 
     def __init__(
             self,
@@ -94,7 +94,7 @@ class IncomeTaxPayment: # מעקב אחר תשלום מיסים
         self.description = description
 
 
-class NationalInsurancePayment: # מעקב אחר תשלום ביטוח לאומי
+class NationalInsurancePayment:
 
     def __init__(
             self,
@@ -218,12 +218,12 @@ class IncomeTaxService:
     def calculate_monthly_tax(self, income: Decimal) -> Decimal:
 
         brackets = [
-            (Decimal("7010"), Decimal("0.10")),
-            (Decimal("10060"), Decimal("0.14")),
-            (Decimal("19000"), Decimal("0.20")),
-            (Decimal("25100"), Decimal("0.31")),
-            (Decimal("46690"), Decimal("0.35")),
-            (Decimal("60130"), Decimal("0.47")),
+            (Decimal("7010"),      Decimal("0.10")),
+            (Decimal("10060"),     Decimal("0.14")),
+            (Decimal("19000"),     Decimal("0.20")),
+            (Decimal("25100"),     Decimal("0.31")),
+            (Decimal("46690"),     Decimal("0.35")),
+            (Decimal("60130"),     Decimal("0.47")),
             (Decimal("999999999"), Decimal("0.50")),
         ]
 
@@ -232,12 +232,12 @@ class IncomeTaxService:
     def calculate_yearly_tax(self, income: Decimal):
 
         brackets = [
-            (Decimal("84200"), Decimal("0.10")),
-            (Decimal("120720"), Decimal("0.14")),
-            (Decimal("228000"), Decimal("0.20")),
-            (Decimal("301200"), Decimal("0.31")),
-            (Decimal("560280"), Decimal("0.35")),
-            (Decimal("721560"), Decimal("0.47")),
+            (Decimal("84200"),     Decimal("0.10")),
+            (Decimal("120720"),    Decimal("0.14")),
+            (Decimal("228000"),    Decimal("0.20")),
+            (Decimal("301200"),    Decimal("0.31")),
+            (Decimal("560280"),    Decimal("0.35")),
+            (Decimal("721560"),    Decimal("0.47")),
             (Decimal("999999999"), Decimal("0.50")),
         ]
 
@@ -255,7 +255,7 @@ class NationalInsuranceService:
         ni = Decimal("0")
 
         brackets = [
-            (Decimal("7703"), Decimal("0.077")),
+            (Decimal("7703"),  Decimal("0.077")),
             (Decimal("51910"), Decimal("0.18")),
         ]
 
@@ -285,7 +285,7 @@ class NationalInsuranceService:
         ni = Decimal("0")
 
         brackets = [
-            (Decimal("92436"), Decimal("0.077")),
+            (Decimal("92436"),  Decimal("0.077")),
             (Decimal("622920"), Decimal("0.18")),
         ]
 
@@ -676,11 +676,11 @@ class CashflowReportService:
 
     def generate_monthly_cashflow_report(self, month, year):
 
-        cash_revenue = Decimal("0")
+        cash_revenue  = Decimal("0")
         cash_expenses = Decimal("0")
 
         output_vat = Decimal("0")
-        input_vat = Decimal("0")
+        input_vat  = Decimal("0")
 
         for p in self.payments:
 
@@ -697,32 +697,22 @@ class CashflowReportService:
                     if r.id == p.revenue_id:
 
                         related_revenue = r
-
                         break
 
                 if related_revenue:
 
                     if related_revenue.vat_included:
 
-                        vat = (
-                                p.amount
-                                -
-                                (p.amount / VAT_DIVISOR)
-                        )
-
-                        net_amount = (
-                                p.amount / VAT_DIVISOR
-                        )
+                        vat        = p.amount - (p.amount / VAT_DIVISOR)
+                        net_amount = p.amount / VAT_DIVISOR
 
                     else:
 
-                        vat = p.amount * VAT_RATE
-
+                        vat        = p.amount * VAT_RATE
                         net_amount = p.amount
 
-                    output_vat += vat
-
-                    cash_revenue += net_amount
+                    output_vat    += vat
+                    cash_revenue  += net_amount
 
         for ep in self.expense_payments:
 
@@ -739,64 +729,36 @@ class CashflowReportService:
                     if e.id == ep.expense_id:
 
                         related_expense = e
-
                         break
 
                 if related_expense:
 
                     if related_expense.vat_included:
 
-                        vat = (
-                                ep.amount
-                                -
-                                (ep.amount / VAT_DIVISOR)
-                        )
-
-                        net_amount = (
-                                ep.amount / VAT_DIVISOR
-                        )
+                        vat        = ep.amount - (ep.amount / VAT_DIVISOR)
+                        net_amount = ep.amount / VAT_DIVISOR
 
                     else:
 
-                        vat = ep.amount * VAT_RATE
-
+                        vat        = ep.amount * VAT_RATE
                         net_amount = ep.amount
 
-                    input_vat += vat
-
+                    input_vat     += vat
                     cash_expenses += net_amount
 
         vat_to_pay = output_vat - input_vat
 
-        operating_cash_profit = (
-                cash_revenue
-                -
-                cash_expenses
-        )
+        operating_cash_profit = cash_revenue - cash_expenses
 
-        ni = self.ni_service.calculate_monthly_ni(
-            operating_cash_profit
-        )
+        ni = self.ni_service.calculate_monthly_ni(operating_cash_profit)
 
         deductible_ni = ni * Decimal("0.52")
 
-        adjusted_profit = (
-                operating_cash_profit
-                -
-                deductible_ni
-        )
+        adjusted_profit = operating_cash_profit - deductible_ni
 
-        income_tax = self.tax_service.calculate_monthly_tax(
-            adjusted_profit
-        )
+        income_tax = self.tax_service.calculate_monthly_tax(adjusted_profit)
 
-        net_cash_profit = (
-                operating_cash_profit
-                -
-                income_tax
-                -
-                ni
-        )
+        net_cash_profit = operating_cash_profit - income_tax - ni
 
         return {
 
@@ -814,6 +776,100 @@ class CashflowReportService:
 
             "vat_to_pay":
                 vat_to_pay,
+
+            "operating_cash_profit":
+                operating_cash_profit,
+
+            "national_insurance":
+                ni,
+
+            "income_tax":
+                income_tax,
+
+            "net_cash_profit":
+                net_cash_profit
+        }
+
+    # ─────────────────────────────────────────
+    # פונקציה חדשה — תזרים שנתי
+    # מחשבת סכום כל התשלומים שנכנסו ויצאו בשנה
+    # ─────────────────────────────────────────
+    def generate_yearly_cashflow_report(self, year):
+
+        cash_revenue  = Decimal("0")
+        cash_expenses = Decimal("0")
+
+        # סכום כל התשלומים שנכנסו בשנה
+        for p in self.payments:
+
+            if p.payment_date.year == year:
+
+                related_revenue = None
+
+                for r in self.revenues:
+
+                    if r.id == p.revenue_id:
+
+                        related_revenue = r
+                        break
+
+                if related_revenue:
+
+                    if related_revenue.vat_included:
+
+                        net_amount = p.amount / VAT_DIVISOR
+
+                    else:
+
+                        net_amount = p.amount
+
+                    cash_revenue += net_amount
+
+        # סכום כל התשלומים שיצאו בשנה
+        for ep in self.expense_payments:
+
+            if ep.payment_date.year == year:
+
+                related_expense = None
+
+                for e in self.expenses:
+
+                    if e.id == ep.expense_id:
+
+                        related_expense = e
+                        break
+
+                if related_expense:
+
+                    if related_expense.vat_included:
+
+                        net_amount = ep.amount / VAT_DIVISOR
+
+                    else:
+
+                        net_amount = ep.amount
+
+                    cash_expenses += net_amount
+
+        operating_cash_profit = cash_revenue - cash_expenses
+
+        ni = self.ni_service.calculate_yearly_ni(operating_cash_profit)
+
+        deductible_ni = ni * Decimal("0.52")
+
+        adjusted_profit = operating_cash_profit - deductible_ni
+
+        income_tax = self.tax_service.calculate_yearly_tax(adjusted_profit)
+
+        net_cash_profit = operating_cash_profit - income_tax - ni
+
+        return {
+
+            "cash_revenue":
+                cash_revenue,
+
+            "cash_expenses":
+                cash_expenses,
 
             "operating_cash_profit":
                 operating_cash_profit,
@@ -874,9 +930,7 @@ class YearlyAccountingSettlementService:
 
                 if r.vat_included:
 
-                    yearly_net_revenue += (
-                            r.amount / VAT_DIVISOR
-                    )
+                    yearly_net_revenue += r.amount / VAT_DIVISOR
 
                 else:
 
@@ -894,9 +948,7 @@ class YearlyAccountingSettlementService:
 
                 if e.vat_included:
 
-                    yearly_net_expenses += (
-                            e.amount / VAT_DIVISOR
-                    )
+                    yearly_net_expenses += e.amount / VAT_DIVISOR
 
                 else:
 
@@ -916,21 +968,13 @@ class YearlyAccountingSettlementService:
 
                 if p.calculation_type == "auto":
 
-                    units = (
-                        worklog_service.get_monthly_units(
-                            p.id,
-                            month,
-                            year
-                        )
-                    )
+                    units = worklog_service.get_monthly_units(p.id, month, year)
 
                 else:
 
                     units = p.units
 
-                yearly_payroll += (
-                        p.rate * units
-                )
+                yearly_payroll += p.rate * units
 
         # =========================
         # OPERATING PROFIT
@@ -948,39 +992,28 @@ class YearlyAccountingSettlementService:
         # YEARLY NATIONAL INSURANCE
         # =========================
 
-        actual_yearly_ni = (
-            self.ni_service.calculate_yearly_ni(
-                yearly_operating_profit
-            )
+        actual_yearly_ni = self.ni_service.calculate_yearly_ni(
+            yearly_operating_profit
         )
 
         # =========================
         # DEDUCTIBLE NI
         # =========================
 
-        deductible_ni = (
-                actual_yearly_ni
-                * Decimal("0.52")
-        )
+        deductible_ni = actual_yearly_ni * Decimal("0.52")
 
         # =========================
         # ADJUSTED PROFIT
         # =========================
 
-        adjusted_yearly_profit = (
-                yearly_operating_profit
-                -
-                deductible_ni
-        )
+        adjusted_yearly_profit = yearly_operating_profit - deductible_ni
 
         # =========================
         # YEARLY INCOME TAX
         # =========================
 
-        actual_yearly_income_tax = (
-            self.tax_service.calculate_yearly_tax(
-                adjusted_yearly_profit
-            )
+        actual_yearly_income_tax = self.tax_service.calculate_yearly_tax(
+            adjusted_yearly_profit
         )
 
         # =========================
@@ -1011,32 +1044,19 @@ class YearlyAccountingSettlementService:
         # TAX DIFFERENCES
         # =========================
 
-        income_tax_difference = (
-                actual_yearly_income_tax
-                -
-                paid_income_tax
-        )
+        income_tax_difference = actual_yearly_income_tax - paid_income_tax
 
-        ni_difference = (
-                actual_yearly_ni
-                -
-                paid_ni
-        )
+        ni_difference = actual_yearly_ni - paid_ni
 
         # =========================
         # TAX STATUS
         # =========================
 
         if income_tax_difference > 0:
-
             income_tax_status = "to_pay"
-
         elif income_tax_difference < 0:
-
             income_tax_status = "refund"
-
         else:
-
             income_tax_status = "balanced"
 
         # =========================
@@ -1044,15 +1064,10 @@ class YearlyAccountingSettlementService:
         # =========================
 
         if ni_difference > 0:
-
             ni_status = "to_pay"
-
         elif ni_difference < 0:
-
             ni_status = "refund"
-
         else:
-
             ni_status = "balanced"
 
         # =========================
@@ -1073,27 +1088,17 @@ class YearlyAccountingSettlementService:
 
         return {
 
-            # Revenue
-
             "yearly_net_revenue":
                 yearly_net_revenue,
-
-            # Expenses
 
             "yearly_net_expenses":
                 yearly_net_expenses,
 
-            # Payroll
-
             "yearly_payroll":
                 yearly_payroll,
 
-            # Operating profit
-
             "yearly_operating_profit":
                 yearly_operating_profit,
-
-            # National insurance
 
             "actual_yearly_national_insurance":
                 actual_yearly_ni,
@@ -1106,8 +1111,6 @@ class YearlyAccountingSettlementService:
 
             "national_insurance_status":
                 ni_status,
-
-            # Income tax
 
             "adjusted_yearly_profit":
                 adjusted_yearly_profit,
@@ -1124,10 +1127,6 @@ class YearlyAccountingSettlementService:
             "income_tax_status":
                 income_tax_status,
 
-            # Final
-
             "final_net_profit":
                 final_net_profit
         }
-
-
