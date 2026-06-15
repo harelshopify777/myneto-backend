@@ -352,6 +352,19 @@ def add_worklog(data: WorkLogIn):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/report/yearly-cashflow")
+def get_yearly_cashflow_report(year: int):
+    try:
+        service = CashflowReportService(
+            load_revenues(), load_payments(),
+            load_expenses(), load_expense_payments(),
+            vat_service, tax_service, ni_service
+        )
+        report = service.generate_yearly_cashflow_report(year)
+        return {k: float(v) for k, v in report.items()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/report/balances")
 def get_balances(month: int, year: int):
     try:
