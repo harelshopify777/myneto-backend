@@ -401,6 +401,64 @@ def add_payroll_payment(data: PayrollPaymentIn):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# =========================
+# DELETE + PUT REVENUES
+# =========================
+
+class RevenueUpdate(BaseModel):
+    amount: float = None
+    vat_included: bool = None
+    transaction_date: str = None
+    description: str = None
+    customer_name: str = None
+
+@app.delete("/revenues/{id}")
+def delete_revenue(id: int):
+    try:
+        supabase.table("revenues").delete().eq("id", id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/revenues/{id}")
+def update_revenue(id: int, data: RevenueUpdate):
+    try:
+        update = {k: v for k, v in data.dict().items() if v is not None}
+        result = supabase.table("revenues").update(update).eq("id", id).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =========================
+# DELETE + PUT EXPENSES
+# =========================
+
+class ExpenseUpdate(BaseModel):
+    amount: float = None
+    vat_included: bool = None
+    transaction_date: str = None
+    description: str = None
+    supplier_name: str = None
+    is_deductible: bool = None
+    deal_reference: str = None
+
+@app.delete("/expenses/{id}")
+def delete_expense(id: int):
+    try:
+        supabase.table("expenses").delete().eq("id", id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/expenses/{id}")
+def update_expense(id: int, data: ExpenseUpdate):
+    try:
+        update = {k: v for k, v in data.dict().items() if v is not None}
+        result = supabase.table("expenses").update(update).eq("id", id).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/report/balances")
 def get_balances(month: int, year: int):
     try:
