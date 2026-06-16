@@ -415,6 +415,9 @@ class RevenueUpdate(BaseModel):
 @app.delete("/revenues/{id}")
 def delete_revenue(id: int):
     try:
+        # מחק קודם את התשלומים הקשורים
+        supabase.table("payments").delete().eq("revenue_id", id).execute()
+        # אחר כך מחק את ההכנסה
         supabase.table("revenues").delete().eq("id", id).execute()
         return {"success": True}
     except Exception as e:
@@ -445,6 +448,9 @@ class ExpenseUpdate(BaseModel):
 @app.delete("/expenses/{id}")
 def delete_expense(id: int):
     try:
+        # מחק קודם את התשלומים הקשורים
+        supabase.table("expense_payments").delete().eq("expense_id", id).execute()
+        # אחר כך מחק את ההוצאה
         supabase.table("expenses").delete().eq("id", id).execute()
         return {"success": True}
     except Exception as e:
