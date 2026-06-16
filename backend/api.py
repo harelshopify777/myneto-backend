@@ -365,6 +365,42 @@ def get_yearly_cashflow_report(year: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# =========================
+# PAYROLL PAYMENTS
+# =========================
+
+def load_payroll_payments():
+    rows = supabase.table("payroll_payments").select("*").execute().data
+    return rows
+
+@app.get("/payroll-payments")
+def get_payroll_payments():
+    try:
+        return load_payroll_payments()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class PayrollPaymentIn(BaseModel):
+    employee_id: int
+    amount: float
+    payment_date: str
+    month: int
+    year: int
+
+@app.post("/payroll-payments")
+def add_payroll_payment(data: PayrollPaymentIn):
+    try:
+        result = supabase.table("payroll_payments").insert({
+            "employee_id":   data.employee_id,
+            "amount":        data.amount,
+            "payment_date":  data.payment_date,
+            "month":         data.month,
+            "year":          data.year
+        }).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/report/balances")
 def get_balances(month: int, year: int):
     try:
