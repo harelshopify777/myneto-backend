@@ -83,16 +83,29 @@ def load_expense_payments():
 
 def load_payrolls():
     rows = supabase.table("employees").select("*").execute().data
-    return [Payroll(
-        id=r["id"],
-        employee_name=r["employee_name"],
-        salary_type=r["salary_type"],
-        rate=Decimal(str(r["rate"])),
-        units=0,
-        paid_this_month=False,
-        calculation_type=r["calculation_type"] or "manual"
-    ) for r in rows]
+    result = []
+    for r in rows:
+        salary_type = r["salary_type"]
+        calc_type   = r["calculation_type"] or "manual"
 
+        # עובד חודשי — תמיד יחידה אחת (שכר חודשי קבוע)
+        # עובד יומי/שעתי עם auto — יחושב מיומן העבודה
+        # עובד יומי/שעתי עם manual — יחושב מיומן העבודה גם כן
+        if salary_type == "monthly":
+            units = 1
+        else:
+            units = 0  # יחושב מיומן עבודה ע"י WorkLogService
+
+        result.append(Payroll(
+            id=r["id"],
+            employee_name=r["employee_name"],
+            salary_type=salary_type,
+            rate=Decimal(str(r["rate"])),
+            units=units,
+            paid_this_month=False,
+            calculation_type="auto" if salary_type != "monthly" else "manual"
+        ))
+    return result
 def load_worklogs():
     rows = supabase.table("work_logs").select("*").execute().data
     return [WorkLog(
