@@ -179,6 +179,59 @@ def get_yearly_report(year: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/report/yearly-cashflow")
+def get_yearly_cashflow_report(year: int):
+    try:
+        service = CashflowReportService(
+            load_revenues(), load_payments(),
+            load_expenses(), load_expense_payments(),
+            vat_service, tax_service, ni_service
+        )
+        report = service.generate_yearly_cashflow_report(year)
+        return {k: float(v) for k, v in report.items()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/report/balances")
+def get_balances(month: int, year: int):
+    try:
+        all_revenues         = load_revenues()
+        all_payments         = load_payments()
+        all_expenses         = load_expenses()
+        all_expense_payments = load_expense_payments()
+
+        monthly_revenues = [r for r in all_revenues
+            if r.transaction_date.month == month and r.transaction_date.year == year]
+        monthly_expenses = [e for e in all_expenses
+            if e.transaction_date.month == month and e.transaction_date.year == year]
+        monthly_payments = [p for p in all_payments
+            if p.payment_date.month == month and p.payment_date.year == year]
+        monthly_expense_payments = [ep for ep in all_expense_payments
+            if ep.payment_date.month == month and ep.payment_date.year == year]
+
+        total_revenues     = sum(r.amount for r in monthly_revenues)
+        total_payments_in  = sum(p.amount for p in monthly_payments)
+        customers_debt     = total_revenues - total_payments_in
+
+        total_expenses     = sum(e.amount for e in monthly_expenses)
+        total_payments_out = sum(ep.amount for ep in monthly_expense_payments)
+        suppliers_debt     = total_expenses - total_payments_out
+
+        return {
+            "customers_debt":    float(customers_debt),
+            "suppliers_debt":    float(suppliers_debt),
+            "total_revenues":    float(total_revenues),
+            "total_payments_in": float(total_payments_in),
+            "total_expenses":    float(total_expenses),
+            "total_payments_out":float(total_payments_out),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =========================
+# GET ENDPOINTS
+# =========================
+
 @app.get("/revenues")
 def get_revenues():
     rows = supabase.table("revenues").select("*").execute().data
@@ -203,17 +256,26 @@ def get_expenses():
 
 @app.get("/payroll")
 def get_payroll():
+    rows = supabase.table("employees").select("*").execute().data
     return [
-        {"id":p.id, "employee_name":p.employee_name, "salary_type":p.salary_type,
-         "rate":float(p.rate), "units":p.units, "paid_this_month":p.paid_this_month,
-         "calculation_type":p.calculation_type}
-        for p in load_payrolls()
+        {
+            "id":               r["id"],
+            "employee_name":    r["employee_name"],
+            "salary_type":      r["salary_type"],
+            "rate":             float(r["rate"]),
+            "units":            0,
+            "paid_this_month":  False,
+            "calculation_type": r.get("calculation_type") or "manual",
+            "role":             r.get("role") or "",
+            "is_active":        r.get("is_active", True),
+        }
+        for r in rows
     ]
 
 @app.get("/worklog/{employee_id}")
 def get_worklog(employee_id: int, month: int, year: int):
     wl_service = WorkLogService(load_worklogs())
-    calendar = wl_service.get_monthly_calendar(employee_id, month, year)
+    calendar   = wl_service.get_monthly_calendar(employee_id, month, year)
     return {"employee_id": employee_id, "month": month, "year": year, "days": calendar}
 
 @app.get("/payments")
@@ -230,8 +292,15 @@ def get_expense_payments():
         for ep in load_expense_payments()
     ]
 
+@app.get("/payroll-payments")
+def get_payroll_payments():
+    try:
+        return supabase.table("payroll_payments").select("*").execute().data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # =========================
-# POST ENDPOINTS — הוספת נתונים
+# POST ENDPOINTS
 # =========================
 
 class RevenueIn(BaseModel):
@@ -255,6 +324,8 @@ class EmployeeIn(BaseModel):
     salary_type: str
     rate: float
     calculation_type: str = "manual"
+    role: str = ""
+    is_active: bool = True
 
 class PaymentIn(BaseModel):
     revenue_id: int
@@ -266,6 +337,13 @@ class ExpensePaymentIn(BaseModel):
     amount: float
     payment_date: str
 
+class PayrollPaymentIn(BaseModel):
+    employee_id: int
+    amount: float
+    payment_date: str
+    month: int
+    year: int
+
 class WorkLogIn(BaseModel):
     employee_id: int
     work_date: str
@@ -276,11 +354,11 @@ class WorkLogIn(BaseModel):
 def add_revenue(data: RevenueIn):
     try:
         result = supabase.table("revenues").insert({
-            "amount": data.amount,
-            "vat_included": data.vat_included,
+            "amount":           data.amount,
+            "vat_included":     data.vat_included,
             "transaction_date": data.transaction_date,
-            "description": data.description,
-            "customer_name": data.customer_name
+            "description":      data.description,
+            "customer_name":    data.customer_name
         }).execute()
         return {"success": True, "data": result.data}
     except Exception as e:
@@ -290,13 +368,13 @@ def add_revenue(data: RevenueIn):
 def add_expense(data: ExpenseIn):
     try:
         result = supabase.table("expenses").insert({
-            "amount": data.amount,
-            "vat_included": data.vat_included,
+            "amount":           data.amount,
+            "vat_included":     data.vat_included,
             "transaction_date": data.transaction_date,
-            "description": data.description,
-            "is_deductible": data.is_deductible,
-            "supplier_name": data.supplier_name,
-            "deal_reference": data.deal_reference
+            "description":      data.description,
+            "is_deductible":    data.is_deductible,
+            "supplier_name":    data.supplier_name,
+            "deal_reference":   data.deal_reference
         }).execute()
         return {"success": True, "data": result.data}
     except Exception as e:
@@ -306,10 +384,12 @@ def add_expense(data: ExpenseIn):
 def add_employee(data: EmployeeIn):
     try:
         result = supabase.table("employees").insert({
-            "employee_name": data.employee_name,
-            "salary_type": data.salary_type,
-            "rate": data.rate,
-            "calculation_type": data.calculation_type
+            "employee_name":    data.employee_name,
+            "salary_type":      data.salary_type,
+            "rate":             data.rate,
+            "calculation_type": data.calculation_type,
+            "role":             data.role,
+            "is_active":        data.is_active,
         }).execute()
         return {"success": True, "data": result.data}
     except Exception as e:
@@ -319,8 +399,8 @@ def add_employee(data: EmployeeIn):
 def add_payment(data: PaymentIn):
     try:
         result = supabase.table("payments").insert({
-            "revenue_id": data.revenue_id,
-            "amount": data.amount,
+            "revenue_id":   data.revenue_id,
+            "amount":       data.amount,
             "payment_date": data.payment_date
         }).execute()
         return {"success": True, "data": result.data}
@@ -331,9 +411,23 @@ def add_payment(data: PaymentIn):
 def add_expense_payment(data: ExpensePaymentIn):
     try:
         result = supabase.table("expense_payments").insert({
-            "expense_id": data.expense_id,
-            "amount": data.amount,
+            "expense_id":   data.expense_id,
+            "amount":       data.amount,
             "payment_date": data.payment_date
+        }).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/payroll-payments")
+def add_payroll_payment(data: PayrollPaymentIn):
+    try:
+        result = supabase.table("payroll_payments").insert({
+            "employee_id":  data.employee_id,
+            "amount":       data.amount,
+            "payment_date": data.payment_date,
+            "month":        data.month,
+            "year":         data.year
         }).execute()
         return {"success": True, "data": result.data}
     except Exception as e:
@@ -344,58 +438,9 @@ def add_worklog(data: WorkLogIn):
     try:
         result = supabase.table("work_logs").insert({
             "employee_id": data.employee_id,
-            "work_date": data.work_date,
-            "worked": data.worked,
-            "units": data.units
-        }).execute()
-        return {"success": True, "data": result.data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/report/yearly-cashflow")
-def get_yearly_cashflow_report(year: int):
-    try:
-        service = CashflowReportService(
-            load_revenues(), load_payments(),
-            load_expenses(), load_expense_payments(),
-            vat_service, tax_service, ni_service
-        )
-        report = service.generate_yearly_cashflow_report(year)
-        return {k: float(v) for k, v in report.items()}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# =========================
-# PAYROLL PAYMENTS
-# =========================
-
-def load_payroll_payments():
-    rows = supabase.table("payroll_payments").select("*").execute().data
-    return rows
-
-@app.get("/payroll-payments")
-def get_payroll_payments():
-    try:
-        return load_payroll_payments()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-class PayrollPaymentIn(BaseModel):
-    employee_id: int
-    amount: float
-    payment_date: str
-    month: int
-    year: int
-
-@app.post("/payroll-payments")
-def add_payroll_payment(data: PayrollPaymentIn):
-    try:
-        result = supabase.table("payroll_payments").insert({
-            "employee_id":   data.employee_id,
-            "amount":        data.amount,
-            "payment_date":  data.payment_date,
-            "month":         data.month,
-            "year":          data.year
+            "work_date":   data.work_date,
+            "worked":      data.worked,
+            "units":       data.units
         }).execute()
         return {"success": True, "data": result.data}
     except Exception as e:
@@ -415,9 +460,7 @@ class RevenueUpdate(BaseModel):
 @app.delete("/revenues/{id}")
 def delete_revenue(id: int):
     try:
-        # מחק קודם את התשלומים הקשורים
         supabase.table("payments").delete().eq("revenue_id", id).execute()
-        # אחר כך מחק את ההכנסה
         supabase.table("revenues").delete().eq("id", id).execute()
         return {"success": True}
     except Exception as e:
@@ -448,9 +491,7 @@ class ExpenseUpdate(BaseModel):
 @app.delete("/expenses/{id}")
 def delete_expense(id: int):
     try:
-        # מחק קודם את התשלומים הקשורים
         supabase.table("expense_payments").delete().eq("expense_id", id).execute()
-        # אחר כך מחק את ההוצאה
         supabase.table("expenses").delete().eq("id", id).execute()
         return {"success": True}
     except Exception as e:
@@ -470,16 +511,18 @@ def update_expense(id: int, data: ExpenseUpdate):
 # =========================
 
 class EmployeeUpdate(BaseModel):
-    employee_name: str = None
-    salary_type: str = None
-    rate: float = None
-    calculation_type: str = None
-    role: str = None
-    is_active: bool = None
+    employee_name:    str  = None
+    salary_type:      str  = None
+    rate:             float = None
+    calculation_type: str  = None
+    role:             str  = None
+    is_active:        bool = None
 
 @app.delete("/employees/{id}")
 def delete_employee(id: int):
     try:
+        supabase.table("payroll_payments").delete().eq("employee_id", id).execute()
+        supabase.table("work_logs").delete().eq("employee_id", id).execute()
         supabase.table("employees").delete().eq("id", id).execute()
         return {"success": True}
     except Exception as e:
@@ -491,54 +534,5 @@ def update_employee(id: int, data: EmployeeUpdate):
         update = {k: v for k, v in data.dict().items() if v is not None}
         result = supabase.table("employees").update(update).eq("id", id).execute()
         return {"success": True, "data": result.data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-        
-@app.get("/report/balances")
-def get_balances(month: int, year: int):
-    try:
-        all_revenues = load_revenues()
-        all_payments = load_payments()
-        all_expenses = load_expenses()
-        all_expense_payments = load_expense_payments()
-
-        monthly_revenues = [
-            r for r in all_revenues
-            if r.transaction_date.month == month
-            and r.transaction_date.year == year
-        ]
-        monthly_expenses = [
-            e for e in all_expenses
-            if e.transaction_date.month == month
-            and e.transaction_date.year == year
-        ]
-        monthly_payments = [
-            p for p in all_payments
-            if p.payment_date.month == month
-            and p.payment_date.year == year
-        ]
-        monthly_expense_payments = [
-            ep for ep in all_expense_payments
-            if ep.payment_date.month == month
-            and ep.payment_date.year == year
-        ]
-
-        total_revenues = sum(r.amount for r in monthly_revenues)
-        total_payments_in = sum(p.amount for p in monthly_payments)
-        customers_debt = total_revenues - total_payments_in
-
-        total_expenses = sum(e.amount for e in monthly_expenses)
-        total_payments_out = sum(ep.amount for ep in monthly_expense_payments)
-        suppliers_debt = total_expenses - total_payments_out
-
-        return {
-            "customers_debt": float(customers_debt),
-            "suppliers_debt": float(suppliers_debt),
-            "total_revenues": float(total_revenues),
-            "total_payments_in": float(total_payments_in),
-            "total_expenses": float(total_expenses),
-            "total_payments_out": float(total_payments_out),
-        }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
