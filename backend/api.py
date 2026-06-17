@@ -465,6 +465,35 @@ def update_expense(id: int, data: ExpenseUpdate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# =========================
+# DELETE + PUT EMPLOYEES
+# =========================
+
+class EmployeeUpdate(BaseModel):
+    employee_name: str = None
+    salary_type: str = None
+    rate: float = None
+    calculation_type: str = None
+    role: str = None
+    is_active: bool = None
+
+@app.delete("/employees/{id}")
+def delete_employee(id: int):
+    try:
+        supabase.table("employees").delete().eq("id", id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/employees/{id}")
+def update_employee(id: int, data: EmployeeUpdate):
+    try:
+        update = {k: v for k, v in data.dict().items() if v is not None}
+        result = supabase.table("employees").update(update).eq("id", id).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
 @app.get("/report/balances")
 def get_balances(month: int, year: int):
     try:
