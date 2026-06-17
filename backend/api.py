@@ -302,6 +302,18 @@ def delete_ni_payment(id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/report/yearly-vat")
+def get_yearly_vat(year: int):
+    try:
+        service = get_accounting_service()
+        total_vat = 0.0
+        for month in range(1, 13):
+            report = service.generate_monthly_report(month, year)
+            total_vat += float(report["vat_to_pay"])
+        return {"yearly_vat_to_pay": total_vat}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/report/balances")
 def get_balances(month: int, year: int):
     try:
