@@ -446,6 +446,43 @@ def add_worklog(data: WorkLogIn):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/worklog/{employee_id}/{work_date}")
+def delete_worklog(employee_id: int, work_date: str):
+    try:
+        supabase.table("work_logs").delete()\
+            .eq("employee_id", employee_id)\
+            .eq("work_date", work_date)\
+            .execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/worklog/{employee_id}/{work_date}")
+def update_worklog(employee_id: int, work_date: str, data: WorkLogIn):
+    try:
+        # בדוק אם קיים
+        existing = supabase.table("work_logs")\
+            .select("*")\
+            .eq("employee_id", employee_id)\
+            .eq("work_date", work_date)\
+            .execute().data
+        if existing:
+            supabase.table("work_logs")\
+                .update({"worked": data.worked, "units": data.units})\
+                .eq("employee_id", employee_id)\
+                .eq("work_date", work_date)\
+                .execute()
+        else:
+            supabase.table("work_logs").insert({
+                "employee_id": employee_id,
+                "work_date":   work_date,
+                "worked":      data.worked,
+                "units":       data.units
+            }).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # =========================
 # DELETE + PUT REVENUES
 # =========================
