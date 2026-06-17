@@ -192,6 +192,116 @@ def get_yearly_cashflow_report(year: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# =========================
+# VAT PAYMENTS
+# =========================
+
+def load_vat_payments():
+    rows = supabase.table("vat_payments").select("*").execute().data
+    return rows
+
+class VatPaymentIn(BaseModel):
+    amount: float
+    payment_date: str
+    period: str
+    description: str = ""
+
+@app.get("/vat-payments")
+def get_vat_payments():
+    try:
+        return load_vat_payments()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/vat-payments")
+def add_vat_payment(data: VatPaymentIn):
+    try:
+        result = supabase.table("vat_payments").insert({
+            "amount":       data.amount,
+            "payment_date": data.payment_date,
+            "period":       data.period,
+            "description":  data.description,
+        }).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/vat-payments/{id}")
+def delete_vat_payment(id: int):
+    try:
+        supabase.table("vat_payments").delete().eq("id", id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =========================
+# INCOME TAX PAYMENTS — GET + POST + DELETE
+# =========================
+
+class TaxPaymentIn(BaseModel):
+    amount: float
+    payment_date: str
+    period: str
+    description: str = ""
+
+@app.get("/income-tax-payments")
+def get_income_tax_payments():
+    try:
+        return supabase.table("income_tax_payments").select("*").execute().data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/income-tax-payments")
+def add_income_tax_payment(data: TaxPaymentIn):
+    try:
+        result = supabase.table("income_tax_payments").insert({
+            "amount":       data.amount,
+            "payment_date": data.payment_date,
+            "description":  f"{data.period} — {data.description}",
+        }).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/income-tax-payments/{id}")
+def delete_income_tax_payment(id: int):
+    try:
+        supabase.table("income_tax_payments").delete().eq("id", id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =========================
+# NATIONAL INSURANCE PAYMENTS — GET + POST + DELETE
+# =========================
+
+@app.get("/ni-payments")
+def get_ni_payments():
+    try:
+        return supabase.table("national_insurance_payments").select("*").execute().data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ni-payments")
+def add_ni_payment(data: TaxPaymentIn):
+    try:
+        result = supabase.table("national_insurance_payments").insert({
+            "amount":       data.amount,
+            "payment_date": data.payment_date,
+            "description":  f"{data.period} — {data.description}",
+        }).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/ni-payments/{id}")
+def delete_ni_payment(id: int):
+    try:
+        supabase.table("national_insurance_payments").delete().eq("id", id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/report/balances")
 def get_balances(month: int, year: int):
     try:
