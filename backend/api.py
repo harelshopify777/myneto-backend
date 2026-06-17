@@ -326,6 +326,26 @@ def get_yearly_vat(year: int):
         return {"yearly_vat_to_pay": total_vat}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+        
+@app.get("/debug/payroll")
+def debug_payroll(month: int, year: int):
+    from MindOfMyNeto import WorkLogService
+    worklogs = load_worklogs()
+    wl_service = WorkLogService(worklogs)
+    payrolls = load_payrolls()
+    result = []
+    for p in payrolls:
+        units = wl_service.get_monthly_units(p.id, month, year)
+        result.append({
+            "id": p.id,
+            "name": p.employee_name,
+            "salary_type": p.salary_type,
+            "calculation_type": p.calculation_type,
+            "rate": float(p.rate),
+            "units_from_worklog": units,
+            "payroll_cost": float(p.rate) * units
+        })
+    return result
 
 @app.get("/report/balances")
 def get_balances(month: int, year: int):
