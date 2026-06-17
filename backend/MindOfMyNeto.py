@@ -966,13 +966,14 @@ class YearlyAccountingSettlementService:
 
             for p in self.payrolls:
 
-                if p.calculation_type == "auto":
-
-                    units = worklog_service.get_monthly_units(p.id, month, year)
-
+                if p.salary_type == "monthly":
+                    units = 1
                 else:
-
-                    units = p.units
+                    units = worklog_service.get_monthly_units(
+                        p.id,
+                        month,
+                        year
+                    )
 
                 yearly_payroll += p.rate * units
 
