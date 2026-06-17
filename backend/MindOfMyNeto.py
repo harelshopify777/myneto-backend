@@ -404,13 +404,8 @@ class NetServiceByMonth:
 
                 monthly_expenses.append(e)
 
-        monthly_payrolls = []
-
-        for p in self.payrolls:
-
-            if p.paid_this_month:
-
-                monthly_payrolls.append(p)
+        # כל העובדים נכללים — החישוב נעשה ב-generate_monthly_report
+        monthly_payrolls = list(self.payrolls)
 
         return {
             "revenues": monthly_revenues,
@@ -506,11 +501,9 @@ class FinancialReportService:
         for p in payrolls:
 
             if p.salary_type == "monthly":
-                # עובד חודשי — שכר קבוע, יחידה אחת
                 units = 1
 
             else:
-                # עובד יומי/שעתי — תמיד מיומן עבודה
                 units = worklog_service.get_monthly_units(
                     p.id,
                     month,
@@ -790,16 +783,11 @@ class CashflowReportService:
                 net_cash_profit
         }
 
-    # ─────────────────────────────────────────
-    # פונקציה חדשה — תזרים שנתי
-    # מחשבת סכום כל התשלומים שנכנסו ויצאו בשנה
-    # ─────────────────────────────────────────
     def generate_yearly_cashflow_report(self, year):
 
         cash_revenue  = Decimal("0")
         cash_expenses = Decimal("0")
 
-        # סכום כל התשלומים שנכנסו בשנה
         for p in self.payments:
 
             if p.payment_date.year == year:
@@ -825,7 +813,6 @@ class CashflowReportService:
 
                     cash_revenue += net_amount
 
-        # סכום כל התשלומים שיצאו בשנה
         for ep in self.expense_payments:
 
             if ep.payment_date.year == year:
@@ -918,10 +905,6 @@ class YearlyAccountingSettlementService:
 
     def generate_yearly_settlement(self, year):
 
-        # =========================
-        # YEARLY REVENUES
-        # =========================
-
         yearly_net_revenue = Decimal("0")
 
         for r in self.revenues:
@@ -936,10 +919,6 @@ class YearlyAccountingSettlementService:
 
                     yearly_net_revenue += r.amount
 
-        # =========================
-        # YEARLY EXPENSES
-        # =========================
-
         yearly_net_expenses = Decimal("0")
 
         for e in self.expenses:
@@ -953,10 +932,6 @@ class YearlyAccountingSettlementService:
                 else:
 
                     yearly_net_expenses += e.amount
-
-        # =========================
-        # YEARLY PAYROLL
-        # =========================
 
         worklog_service = WorkLogService(self.worklogs)
 
@@ -977,10 +952,6 @@ class YearlyAccountingSettlementService:
 
                 yearly_payroll += p.rate * units
 
-        # =========================
-        # OPERATING PROFIT
-        # =========================
-
         yearly_operating_profit = (
                 yearly_net_revenue
                 -
@@ -989,37 +960,17 @@ class YearlyAccountingSettlementService:
                 yearly_payroll
         )
 
-        # =========================
-        # YEARLY NATIONAL INSURANCE
-        # =========================
-
         actual_yearly_ni = self.ni_service.calculate_yearly_ni(
             yearly_operating_profit
         )
 
-        # =========================
-        # DEDUCTIBLE NI
-        # =========================
-
         deductible_ni = actual_yearly_ni * Decimal("0.52")
 
-        # =========================
-        # ADJUSTED PROFIT
-        # =========================
-
         adjusted_yearly_profit = yearly_operating_profit - deductible_ni
-
-        # =========================
-        # YEARLY INCOME TAX
-        # =========================
 
         actual_yearly_income_tax = self.tax_service.calculate_yearly_tax(
             adjusted_yearly_profit
         )
-
-        # =========================
-        # PAID INCOME TAX
-        # =========================
 
         paid_income_tax = Decimal("0")
 
@@ -1029,10 +980,6 @@ class YearlyAccountingSettlementService:
 
                 paid_income_tax += payment.amount
 
-        # =========================
-        # PAID NATIONAL INSURANCE
-        # =========================
-
         paid_ni = Decimal("0")
 
         for payment in self.national_insurance_payments:
@@ -1041,17 +988,9 @@ class YearlyAccountingSettlementService:
 
                 paid_ni += payment.amount
 
-        # =========================
-        # TAX DIFFERENCES
-        # =========================
-
         income_tax_difference = actual_yearly_income_tax - paid_income_tax
 
         ni_difference = actual_yearly_ni - paid_ni
-
-        # =========================
-        # TAX STATUS
-        # =========================
 
         if income_tax_difference > 0:
             income_tax_status = "to_pay"
@@ -1060,20 +999,12 @@ class YearlyAccountingSettlementService:
         else:
             income_tax_status = "balanced"
 
-        # =========================
-        # NI STATUS
-        # =========================
-
         if ni_difference > 0:
             ni_status = "to_pay"
         elif ni_difference < 0:
             ni_status = "refund"
         else:
             ni_status = "balanced"
-
-        # =========================
-        # FINAL NET PROFIT
-        # =========================
 
         final_net_profit = (
                 yearly_operating_profit
@@ -1082,10 +1013,6 @@ class YearlyAccountingSettlementService:
                 -
                 actual_yearly_ni
         )
-
-        # =========================
-        # RETURN
-        # =========================
 
         return {
 
