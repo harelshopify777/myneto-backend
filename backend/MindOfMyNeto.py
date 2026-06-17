@@ -505,17 +505,17 @@ class FinancialReportService:
 
         for p in payrolls:
 
-            if p.calculation_type == "auto":
+            if p.salary_type == "monthly":
+                # עובד חודשי — שכר קבוע, יחידה אחת
+                units = 1
 
+            else:
+                # עובד יומי/שעתי — תמיד מיומן עבודה
                 units = worklog_service.get_monthly_units(
                     p.id,
                     month,
                     year
                 )
-
-            else:
-
-                units = p.units
 
             total_payroll += p.rate * units
 
