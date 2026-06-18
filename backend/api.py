@@ -347,6 +347,38 @@ def debug_payroll(month: int, year: int):
         })
     return result
 
+# =========================
+# SETTINGS
+# =========================
+
+class SettingsUpdate(BaseModel):
+    business_name:   str   = None
+    business_type:   str   = None
+    business_number: str   = None
+    address:         str   = None
+    phone:           str   = None
+    email:           str   = None
+    vat_rate:        float = None
+
+@app.get("/settings")
+def get_settings():
+    try:
+        rows = supabase.table("settings").select("*").execute().data
+        if rows:
+            return rows[0]
+        return {}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/settings")
+def update_settings(data: SettingsUpdate):
+    try:
+        update = {k: v for k, v in data.dict().items() if v is not None}
+        result = supabase.table("settings").update(update).eq("id", 1).execute()
+        return {"success": True, "data": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
 @app.get("/report/balances")
 def get_balances(month: int, year: int):
     try:
