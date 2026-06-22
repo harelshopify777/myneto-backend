@@ -801,15 +801,8 @@ class CashflowReportService:
 
                 if related_revenue:
 
-                    if related_revenue.vat_included:
-
-                        net_amount = p.amount / VAT_DIVISOR
-
-                    else:
-
-                        net_amount = p.amount
-
-                    cash_revenue += net_amount
+                    # תזרים — הסכום הגולמי שנכנס בפועל לחשבון
+                    cash_revenue += p.amount
 
         for ep in self.expense_payments:
 
