@@ -827,15 +827,8 @@ class CashflowReportService:
 
                 if related_expense:
 
-                    if related_expense.vat_included:
-
-                        net_amount = ep.amount / VAT_DIVISOR
-
-                    else:
-
-                        net_amount = ep.amount
-
-                    cash_expenses += net_amount
+                    # תזרים — הסכום הגולמי שיצא בפועל מהחשבון
+                    cash_expenses += ep.amount
 
         operating_cash_profit = cash_revenue - cash_expenses
 
