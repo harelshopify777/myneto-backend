@@ -232,7 +232,7 @@ class IncomeTaxService:
     def calculate_yearly_tax(self, income: Decimal):
 
         brackets = [
-            (Decimal("84200"),     Decimal("0.10")),
+            (Decimal("84120"),     Decimal("0.10")),
             (Decimal("120720"),    Decimal("0.14")),
             (Decimal("228000"),    Decimal("0.20")),
             (Decimal("301200"),    Decimal("0.31")),
