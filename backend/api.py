@@ -85,12 +85,12 @@ def load_payrolls():
     rows = supabase.table("employees").select("*").execute().data
     result = []
     for r in rows:
-        salary_type = r["salary_type"]
-        calc_type   = r["calculation_type"] or "manual"
+        # ─── עובדים לא פעילים לא נכללים בחישוב שכר ───
+        if not r.get("is_active", True):
+            continue
 
-        # עובד חודשי — תמיד יחידה אחת (שכר חודשי קבוע)
-        # עובד יומי/שעתי עם auto — יחושב מיומן העבודה
-        # עובד יומי/שעתי עם manual — יחושב מיומן העבודה גם כן
+        salary_type = r["salary_type"]
+
         if salary_type == "monthly":
             units = 1
         else:
