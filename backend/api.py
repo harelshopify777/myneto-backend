@@ -140,8 +140,15 @@ tax_service = IncomeTaxService()
 ni_service  = NationalInsuranceService()
 
 def get_accounting_service():
+    revenues  = load_revenues()
+    time.sleep(0.1)
+    expenses  = load_expenses()
+    time.sleep(0.1)
+    payrolls  = load_payrolls()
+    time.sleep(0.1)
+    worklogs  = load_worklogs()
     return FinancialReportService(
-        load_revenues(), load_expenses(), load_payrolls(), load_worklogs(),
+        revenues, expenses, payrolls, worklogs,
         vat_service, tax_service, ni_service
     )
 
@@ -152,9 +159,20 @@ def get_cashflow_service():
     )
 
 def get_yearly_service():
+    revenues    = load_revenues()
+    time.sleep(0.1)
+    expenses    = load_expenses()
+    time.sleep(0.1)
+    payrolls    = load_payrolls()
+    time.sleep(0.1)
+    worklogs    = load_worklogs()
+    time.sleep(0.1)
+    it_payments = load_income_tax_payments()
+    time.sleep(0.1)
+    ni_payments = load_ni_payments()
     return YearlyAccountingSettlementService(
-        load_revenues(), load_expenses(), load_payrolls(), load_worklogs(),
-        load_income_tax_payments(), load_ni_payments(),
+        revenues, expenses, payrolls, worklogs,
+        it_payments, ni_payments,
         vat_service, tax_service, ni_service
     )
 
