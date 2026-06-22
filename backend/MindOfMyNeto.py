@@ -728,16 +728,15 @@ class CashflowReportService:
 
                     if related_expense.vat_included:
 
-                        vat        = ep.amount - (ep.amount / VAT_DIVISOR)
-                        net_amount = ep.amount / VAT_DIVISOR
+                        vat = ep.amount - (ep.amount / VAT_DIVISOR)
 
                     else:
 
-                        vat        = ep.amount * VAT_RATE
-                        net_amount = ep.amount
+                        vat = ep.amount * VAT_RATE
 
                     input_vat     += vat
-                    cash_expenses += net_amount
+                    # תזרים — הסכום הגולמי שיצא בפועל מהחשבון
+                    cash_expenses += ep.amount
 
         vat_to_pay = output_vat - input_vat
 
