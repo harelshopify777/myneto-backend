@@ -7,7 +7,6 @@ from typing import Optional
 from supabase import create_client
 from dotenv import load_dotenv
 import os
-import time
 
 from MindOfMyNeto import (
     Revenue, Expense, Payment, ExpensePayment,
@@ -221,11 +220,8 @@ ni_service  = NationalInsuranceService()
 
 def get_accounting_service(user_id: int):
     revenues  = load_revenues(user_id)
-    time.sleep(0.1)
     expenses  = load_expenses(user_id)
-    time.sleep(0.1)
     payrolls  = load_payrolls(user_id)
-    time.sleep(0.1)
     worklogs  = load_worklogs(user_id)
     return FinancialReportService(
         revenues, expenses, payrolls, worklogs,
@@ -240,15 +236,10 @@ def get_cashflow_service(user_id: int):
 
 def get_yearly_service(user_id: int):
     revenues    = load_revenues(user_id)
-    time.sleep(0.1)
     expenses    = load_expenses(user_id)
-    time.sleep(0.1)
     payrolls    = load_payrolls(user_id)
-    time.sleep(0.1)
     worklogs    = load_worklogs(user_id)
-    time.sleep(0.1)
     it_payments = load_income_tax_payments(user_id)
-    time.sleep(0.1)
     ni_payments = load_ni_payments(user_id)
     return YearlyAccountingSettlementService(
         revenues, expenses, payrolls, worklogs,
