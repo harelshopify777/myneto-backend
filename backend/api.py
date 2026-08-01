@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi import FastAPI, HTTPException, Depends, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from datetime import date
 from decimal import Decimal
@@ -7,6 +8,10 @@ from typing import Optional
 from supabase import create_client
 from dotenv import load_dotenv
 import os
+import time
+import logging
+import traceback
+import httpx
 
 from MindOfMyNeto import (
     Revenue, Expense, Payment, ExpensePayment,
@@ -29,6 +34,15 @@ load_dotenv()
 
 app = FastAPI(title="MyNeto API")
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("myneto")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception on {request.method} {request.url}")
+    logger.error(traceback.format_exc())
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 
 app.add_middleware(
@@ -47,6 +61,22 @@ supabase = create_client(
     os.getenv("SUPABASE_URL"),
     os.getenv("SUPABASE_KEY")
 )
+
+def db_execute(query, retries: int = 3, delay: float = 0.4):
+    """
+    Executes a Supabase/PostgREST query with automatic retries.
+    Handles transient network errors (e.g. "Server disconnected")
+    that occur when many requests hit the shared Supabase client
+    concurrently.
+    """
+    last_error = None
+    for attempt in range(retries):
+        try:
+            return query.execute()
+        except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as e:
+            last_error = e
+            time.sleep(delay * (attempt + 1))  # simple linear backoff
+    raise last_error
 
 # =========================
 # AUTH
@@ -80,18 +110,18 @@ def signup(data: AuthIn, response: Response):
     if len(data.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
-    existing = supabase.table("users").select("id").eq("username", username).execute().data
+    existing = db_execute(supabase.table("users").select("id").eq("username", username)).data
     if existing:
         raise HTTPException(status_code=409, detail="Username already taken")
 
     password_hash = hash_password(data.password)
-    result = supabase.table("users").insert({
+    result = db_execute(supabase.table("users").insert({
         "username": username,
         "password_hash": password_hash,
-    }).execute()
+    }))
     new_user = result.data[0]
 
-    supabase.table("settings").insert({"user_id": new_user["id"]}).execute()
+    db_execute(supabase.table("settings").insert({"user_id": new_user["id"]}))
 
     _set_session_cookie(response, new_user["id"], new_user["username"])
     return {"username": new_user["username"]}
@@ -100,7 +130,7 @@ def signup(data: AuthIn, response: Response):
 @app.post("/auth/login")
 def login(data: AuthIn, response: Response):
     username = _normalize_username(data.username)
-    rows = supabase.table("users").select("*").eq("username", username).execute().data
+    rows = db_execute(supabase.table("users").select("*").eq("username", username)).data
     if not rows or not verify_password(data.password, rows[0]["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -125,7 +155,7 @@ def me(user: CurrentUser = Depends(get_current_user)):
 # =========================
 
 def load_revenues(user_id: int):
-    rows = supabase.table("revenues").select("*").eq("user_id", user_id).execute().data
+    rows = db_execute(supabase.table("revenues").select("*").eq("user_id", user_id)).data
     return [Revenue(
         id=r["id"],
         amount=Decimal(str(r["amount"])),
@@ -135,7 +165,7 @@ def load_revenues(user_id: int):
     ) for r in rows]
 
 def load_expenses(user_id: int):
-    rows = supabase.table("expenses").select("*").eq("user_id", user_id).execute().data
+    rows = db_execute(supabase.table("expenses").select("*").eq("user_id", user_id)).data
     return [Expense(
         id=r["id"],
         amount=Decimal(str(r["amount"])),
@@ -146,7 +176,7 @@ def load_expenses(user_id: int):
     ) for r in rows]
 
 def load_payments(user_id: int):
-    rows = supabase.table("payments").select("*").eq("user_id", user_id).execute().data
+    rows = db_execute(supabase.table("payments").select("*").eq("user_id", user_id)).data
     return [Payment(
         revenue_id=r["revenue_id"],
         amount=Decimal(str(r["amount"])),
@@ -154,7 +184,7 @@ def load_payments(user_id: int):
     ) for r in rows]
 
 def load_expense_payments(user_id: int):
-    rows = supabase.table("expense_payments").select("*").eq("user_id", user_id).execute().data
+    rows = db_execute(supabase.table("expense_payments").select("*").eq("user_id", user_id)).data
     return [ExpensePayment(
         expense_id=r["expense_id"],
         amount=Decimal(str(r["amount"])),
@@ -162,7 +192,7 @@ def load_expense_payments(user_id: int):
     ) for r in rows]
 
 def load_payrolls(user_id: int):
-    rows = supabase.table("employees").select("*").eq("user_id", user_id).execute().data
+    rows = db_execute(supabase.table("employees").select("*").eq("user_id", user_id)).data
     result = []
     for r in rows:
         # ─── עובדים לא פעילים לא נכללים בחישוב שכר ───
@@ -187,7 +217,7 @@ def load_payrolls(user_id: int):
         ))
     return result
 def load_worklogs(user_id: int):
-    rows = supabase.table("work_logs").select("*").eq("user_id", user_id).execute().data
+    rows = db_execute(supabase.table("work_logs").select("*").eq("user_id", user_id)).data
     return [WorkLog(
         employee_id=r["employee_id"],
         work_date=date.fromisoformat(r["work_date"]),
@@ -195,7 +225,7 @@ def load_worklogs(user_id: int):
     ) for r in rows]
 
 def load_income_tax_payments(user_id: int):
-    rows = supabase.table("income_tax_payments").select("*").eq("user_id", user_id).execute().data
+    rows = db_execute(supabase.table("income_tax_payments").select("*").eq("user_id", user_id)).data
     return [IncomeTaxPayment(
         amount=Decimal(str(r["amount"])),
         payment_date=date.fromisoformat(r["payment_date"]),
@@ -203,7 +233,7 @@ def load_income_tax_payments(user_id: int):
     ) for r in rows]
 
 def load_ni_payments(user_id: int):
-    rows = supabase.table("national_insurance_payments").select("*").eq("user_id", user_id).execute().data
+    rows = db_execute(supabase.table("national_insurance_payments").select("*").eq("user_id", user_id)).data
     return [NationalInsurancePayment(
         amount=Decimal(str(r["amount"])),
         payment_date=date.fromisoformat(r["payment_date"]),
@@ -308,20 +338,20 @@ class VatPaymentIn(BaseModel):
 @app.get("/vat-payments")
 def get_vat_payments(user: CurrentUser = Depends(get_current_user)):
     try:
-        return supabase.table("vat_payments").select("*").eq("user_id", user.id).execute().data
+        return db_execute(supabase.table("vat_payments").select("*").eq("user_id", user.id)).data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/vat-payments")
 def add_vat_payment(data: VatPaymentIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("vat_payments").insert({
+        result = db_execute(supabase.table("vat_payments").insert({
             "amount":       data.amount,
             "payment_date": data.payment_date,
             "period":       data.period,
             "description":  data.description,
             "user_id":      user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -329,7 +359,7 @@ def add_vat_payment(data: VatPaymentIn, user: CurrentUser = Depends(get_current_
 @app.delete("/vat-payments/{id}")
 def delete_vat_payment(id: int, user: CurrentUser = Depends(get_current_user)):
     try:
-        supabase.table("vat_payments").delete().eq("id", id).eq("user_id", user.id).execute()
+        db_execute(supabase.table("vat_payments").delete().eq("id", id).eq("user_id", user.id))
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -347,19 +377,19 @@ class TaxPaymentIn(BaseModel):
 @app.get("/income-tax-payments")
 def get_income_tax_payments(user: CurrentUser = Depends(get_current_user)):
     try:
-        return supabase.table("income_tax_payments").select("*").eq("user_id", user.id).execute().data
+        return db_execute(supabase.table("income_tax_payments").select("*").eq("user_id", user.id)).data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/income-tax-payments")
 def add_income_tax_payment(data: TaxPaymentIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("income_tax_payments").insert({
+        result = db_execute(supabase.table("income_tax_payments").insert({
             "amount":       data.amount,
             "payment_date": data.payment_date,
             "description":  f"{data.period} — {data.description}",
             "user_id":      user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -367,7 +397,7 @@ def add_income_tax_payment(data: TaxPaymentIn, user: CurrentUser = Depends(get_c
 @app.delete("/income-tax-payments/{id}")
 def delete_income_tax_payment(id: int, user: CurrentUser = Depends(get_current_user)):
     try:
-        supabase.table("income_tax_payments").delete().eq("id", id).eq("user_id", user.id).execute()
+        db_execute(supabase.table("income_tax_payments").delete().eq("id", id).eq("user_id", user.id))
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -379,19 +409,19 @@ def delete_income_tax_payment(id: int, user: CurrentUser = Depends(get_current_u
 @app.get("/ni-payments")
 def get_ni_payments(user: CurrentUser = Depends(get_current_user)):
     try:
-        return supabase.table("national_insurance_payments").select("*").eq("user_id", user.id).execute().data
+        return db_execute(supabase.table("national_insurance_payments").select("*").eq("user_id", user.id)).data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/ni-payments")
 def add_ni_payment(data: TaxPaymentIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("national_insurance_payments").insert({
+        result = db_execute(supabase.table("national_insurance_payments").insert({
             "amount":       data.amount,
             "payment_date": data.payment_date,
             "description":  f"{data.period} — {data.description}",
             "user_id":      user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -399,7 +429,7 @@ def add_ni_payment(data: TaxPaymentIn, user: CurrentUser = Depends(get_current_u
 @app.delete("/ni-payments/{id}")
 def delete_ni_payment(id: int, user: CurrentUser = Depends(get_current_user)):
     try:
-        supabase.table("national_insurance_payments").delete().eq("id", id).eq("user_id", user.id).execute()
+        db_execute(supabase.table("national_insurance_payments").delete().eq("id", id).eq("user_id", user.id))
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -452,7 +482,7 @@ class SettingsUpdate(BaseModel):
 @app.get("/settings")
 def get_settings(user: CurrentUser = Depends(get_current_user)):
     try:
-        rows = supabase.table("settings").select("*").eq("user_id", user.id).execute().data
+        rows = db_execute(supabase.table("settings").select("*").eq("user_id", user.id)).data
         if rows:
             return rows[0]
         return {}
@@ -463,7 +493,7 @@ def get_settings(user: CurrentUser = Depends(get_current_user)):
 def update_settings(data: SettingsUpdate, user: CurrentUser = Depends(get_current_user)):
     try:
         update = {k: v for k, v in data.dict().items() if v is not None}
-        result = supabase.table("settings").update(update).eq("user_id", user.id).execute()
+        result = db_execute(supabase.table("settings").update(update).eq("user_id", user.id))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -510,7 +540,7 @@ def get_balances(month: int, year: int, user: CurrentUser = Depends(get_current_
 
 @app.get("/revenues")
 def get_revenues(user: CurrentUser = Depends(get_current_user)):
-    rows = supabase.table("revenues").select("*").eq("user_id", user.id).execute().data
+    rows = db_execute(supabase.table("revenues").select("*").eq("user_id", user.id)).data
     return [
         {"id":r["id"], "amount":float(r["amount"]), "vat_included":r["vat_included"],
          "date":r["transaction_date"], "description":r["description"],
@@ -520,7 +550,7 @@ def get_revenues(user: CurrentUser = Depends(get_current_user)):
 
 @app.get("/expenses")
 def get_expenses(user: CurrentUser = Depends(get_current_user)):
-    rows = supabase.table("expenses").select("*").eq("user_id", user.id).execute().data
+    rows = db_execute(supabase.table("expenses").select("*").eq("user_id", user.id)).data
     return [
         {"id":r["id"], "amount":float(r["amount"]), "vat_included":r["vat_included"],
          "date":r["transaction_date"], "description":r["description"],
@@ -532,7 +562,7 @@ def get_expenses(user: CurrentUser = Depends(get_current_user)):
 
 @app.get("/payroll")
 def get_payroll(user: CurrentUser = Depends(get_current_user)):
-    rows = supabase.table("employees").select("*").eq("user_id", user.id).execute().data
+    rows = db_execute(supabase.table("employees").select("*").eq("user_id", user.id)).data
     return [
         {
             "id":               r["id"],
@@ -571,7 +601,7 @@ def get_expense_payments(user: CurrentUser = Depends(get_current_user)):
 @app.get("/payroll-payments")
 def get_payroll_payments(user: CurrentUser = Depends(get_current_user)):
     try:
-        return supabase.table("payroll_payments").select("*").eq("user_id", user.id).execute().data
+        return db_execute(supabase.table("payroll_payments").select("*").eq("user_id", user.id)).data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -629,14 +659,14 @@ class WorkLogIn(BaseModel):
 @app.post("/revenues")
 def add_revenue(data: RevenueIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("revenues").insert({
+        result = db_execute(supabase.table("revenues").insert({
             "amount":           data.amount,
             "vat_included":     data.vat_included,
             "transaction_date": data.transaction_date,
             "description":      data.description,
             "customer_name":    data.customer_name,
             "user_id":          user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -644,7 +674,7 @@ def add_revenue(data: RevenueIn, user: CurrentUser = Depends(get_current_user)):
 @app.post("/expenses")
 def add_expense(data: ExpenseIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("expenses").insert({
+        result = db_execute(supabase.table("expenses").insert({
             "amount":           data.amount,
             "vat_included":     data.vat_included,
             "transaction_date": data.transaction_date,
@@ -653,7 +683,7 @@ def add_expense(data: ExpenseIn, user: CurrentUser = Depends(get_current_user)):
             "supplier_name":    data.supplier_name,
             "deal_reference":   data.deal_reference,
             "user_id":          user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -661,7 +691,7 @@ def add_expense(data: ExpenseIn, user: CurrentUser = Depends(get_current_user)):
 @app.post("/employees")
 def add_employee(data: EmployeeIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("employees").insert({
+        result = db_execute(supabase.table("employees").insert({
             "employee_name":    data.employee_name,
             "salary_type":      data.salary_type,
             "rate":             data.rate,
@@ -669,7 +699,7 @@ def add_employee(data: EmployeeIn, user: CurrentUser = Depends(get_current_user)
             "role":             data.role,
             "is_active":        data.is_active,
             "user_id":          user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -677,12 +707,12 @@ def add_employee(data: EmployeeIn, user: CurrentUser = Depends(get_current_user)
 @app.post("/payments")
 def add_payment(data: PaymentIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("payments").insert({
+        result = db_execute(supabase.table("payments").insert({
             "revenue_id":   data.revenue_id,
             "amount":       data.amount,
             "payment_date": data.payment_date,
             "user_id":      user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -690,12 +720,12 @@ def add_payment(data: PaymentIn, user: CurrentUser = Depends(get_current_user)):
 @app.post("/expense-payments")
 def add_expense_payment(data: ExpensePaymentIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("expense_payments").insert({
+        result = db_execute(supabase.table("expense_payments").insert({
             "expense_id":   data.expense_id,
             "amount":       data.amount,
             "payment_date": data.payment_date,
             "user_id":      user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -703,14 +733,14 @@ def add_expense_payment(data: ExpensePaymentIn, user: CurrentUser = Depends(get_
 @app.post("/payroll-payments")
 def add_payroll_payment(data: PayrollPaymentIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("payroll_payments").insert({
+        result = db_execute(supabase.table("payroll_payments").insert({
             "employee_id":  data.employee_id,
             "amount":       data.amount,
             "payment_date": data.payment_date,
             "month":        data.month,
             "year":         data.year,
             "user_id":      user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -718,13 +748,13 @@ def add_payroll_payment(data: PayrollPaymentIn, user: CurrentUser = Depends(get_
 @app.post("/worklog")
 def add_worklog(data: WorkLogIn, user: CurrentUser = Depends(get_current_user)):
     try:
-        result = supabase.table("work_logs").insert({
+        result = db_execute(supabase.table("work_logs").insert({
             "employee_id": data.employee_id,
             "work_date":   data.work_date,
             "worked":      data.worked,
             "units":       data.units,
             "user_id":     user.id,
-        }).execute()
+        }))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -732,11 +762,10 @@ def add_worklog(data: WorkLogIn, user: CurrentUser = Depends(get_current_user)):
 @app.delete("/worklog/{employee_id}/{work_date}")
 def delete_worklog(employee_id: int, work_date: str, user: CurrentUser = Depends(get_current_user)):
     try:
-        supabase.table("work_logs").delete()\
+        db_execute(supabase.table("work_logs").delete()\
             .eq("employee_id", employee_id)\
             .eq("work_date", work_date)\
-            .eq("user_id", user.id)\
-            .execute()
+            .eq("user_id", user.id))
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -745,27 +774,25 @@ def delete_worklog(employee_id: int, work_date: str, user: CurrentUser = Depends
 def update_worklog(employee_id: int, work_date: str, data: WorkLogIn, user: CurrentUser = Depends(get_current_user)):
     try:
         # בדוק אם קיים
-        existing = supabase.table("work_logs")\
+        existing = db_execute(supabase.table("work_logs")\
             .select("*")\
             .eq("employee_id", employee_id)\
             .eq("work_date", work_date)\
-            .eq("user_id", user.id)\
-            .execute().data
+            .eq("user_id", user.id)).data
         if existing:
-            supabase.table("work_logs")\
+            db_execute(supabase.table("work_logs")\
                 .update({"worked": data.worked, "units": data.units})\
                 .eq("employee_id", employee_id)\
                 .eq("work_date", work_date)\
-                .eq("user_id", user.id)\
-                .execute()
+                .eq("user_id", user.id))
         else:
-            supabase.table("work_logs").insert({
+            db_execute(supabase.table("work_logs").insert({
                 "employee_id": employee_id,
                 "work_date":   work_date,
                 "worked":      data.worked,
                 "units":       data.units,
                 "user_id":     user.id,
-            }).execute()
+            }))
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -784,8 +811,8 @@ class RevenueUpdate(BaseModel):
 @app.delete("/revenues/{id}")
 def delete_revenue(id: int, user: CurrentUser = Depends(get_current_user)):
     try:
-        supabase.table("payments").delete().eq("revenue_id", id).eq("user_id", user.id).execute()
-        supabase.table("revenues").delete().eq("id", id).eq("user_id", user.id).execute()
+        db_execute(supabase.table("payments").delete().eq("revenue_id", id).eq("user_id", user.id))
+        db_execute(supabase.table("revenues").delete().eq("id", id).eq("user_id", user.id))
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -794,7 +821,7 @@ def delete_revenue(id: int, user: CurrentUser = Depends(get_current_user)):
 def update_revenue(id: int, data: RevenueUpdate, user: CurrentUser = Depends(get_current_user)):
     try:
         update = {k: v for k, v in data.dict().items() if v is not None}
-        result = supabase.table("revenues").update(update).eq("id", id).eq("user_id", user.id).execute()
+        result = db_execute(supabase.table("revenues").update(update).eq("id", id).eq("user_id", user.id))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -815,8 +842,8 @@ class ExpenseUpdate(BaseModel):
 @app.delete("/expenses/{id}")
 def delete_expense(id: int, user: CurrentUser = Depends(get_current_user)):
     try:
-        supabase.table("expense_payments").delete().eq("expense_id", id).eq("user_id", user.id).execute()
-        supabase.table("expenses").delete().eq("id", id).eq("user_id", user.id).execute()
+        db_execute(supabase.table("expense_payments").delete().eq("expense_id", id).eq("user_id", user.id))
+        db_execute(supabase.table("expenses").delete().eq("id", id).eq("user_id", user.id))
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -825,7 +852,7 @@ def delete_expense(id: int, user: CurrentUser = Depends(get_current_user)):
 def update_expense(id: int, data: ExpenseUpdate, user: CurrentUser = Depends(get_current_user)):
     try:
         update = {k: v for k, v in data.dict().items() if v is not None}
-        result = supabase.table("expenses").update(update).eq("id", id).eq("user_id", user.id).execute()
+        result = db_execute(supabase.table("expenses").update(update).eq("id", id).eq("user_id", user.id))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -845,9 +872,9 @@ class EmployeeUpdate(BaseModel):
 @app.delete("/employees/{id}")
 def delete_employee(id: int, user: CurrentUser = Depends(get_current_user)):
     try:
-        supabase.table("payroll_payments").delete().eq("employee_id", id).eq("user_id", user.id).execute()
-        supabase.table("work_logs").delete().eq("employee_id", id).eq("user_id", user.id).execute()
-        supabase.table("employees").delete().eq("id", id).eq("user_id", user.id).execute()
+        db_execute(supabase.table("payroll_payments").delete().eq("employee_id", id).eq("user_id", user.id))
+        db_execute(supabase.table("work_logs").delete().eq("employee_id", id).eq("user_id", user.id))
+        db_execute(supabase.table("employees").delete().eq("id", id).eq("user_id", user.id))
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -856,7 +883,7 @@ def delete_employee(id: int, user: CurrentUser = Depends(get_current_user)):
 def update_employee(id: int, data: EmployeeUpdate, user: CurrentUser = Depends(get_current_user)):
     try:
         update = {k: v for k, v in data.dict().items() if v is not None}
-        result = supabase.table("employees").update(update).eq("id", id).eq("user_id", user.id).execute()
+        result = db_execute(supabase.table("employees").update(update).eq("id", id).eq("user_id", user.id))
         return {"success": True, "data": result.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
