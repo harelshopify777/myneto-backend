@@ -562,15 +562,20 @@ def get_expenses(user: CurrentUser = Depends(get_current_user)):
     ]
 
 @app.get("/payroll")
-def get_payroll(user: CurrentUser = Depends(get_current_user)):
+def get_payroll(month: int = None, year: int = None, user: CurrentUser = Depends(get_current_user)):
     rows = db_execute(supabase.table("employees").select("*").eq("user_id", user.id)).data
+    has_period = month is not None and year is not None
 
-    # סה"כ ששולם לכל עובד, אי פעם (לא מוגבל לחודש נוכחי) — לצורך יתרה לתשלום
+    # סה"כ ששולם לכל עובד, אי פעם (לא מוגבל לחודש נוכחי) — לצורך יתרה לתשלום.
+    # ובמקביל גם הסכום ששולם בדיוק בחודש המבוקש, אם התבקש.
     payments_rows = db_execute(supabase.table("payroll_payments").select("*").eq("user_id", user.id)).data
     total_paid_by_employee = {}
+    month_paid_by_employee = {}
     for pp in payments_rows:
         eid = pp["employee_id"]
         total_paid_by_employee[eid] = total_paid_by_employee.get(eid, 0) + float(pp["amount"])
+        if has_period and pp["month"] == month and pp["year"] == year:
+            month_paid_by_employee[eid] = month_paid_by_employee.get(eid, 0) + float(pp["amount"])
 
     wl_service = WorkLogService(load_worklogs(user.id))
 
@@ -583,25 +588,31 @@ def get_payroll(user: CurrentUser = Depends(get_current_user)):
         if salary_type == "monthly":
             # עובדים חודשיים: עדיין אין נקודת עיגון (תאריך תחילת עבודה/יתרת פתיחה)
             # לחישוב צבירה רב-חודשית מדויקת — יתווסף בהמשך.
-            total_accrued = None
-            balance_due   = None
+            total_accrued      = None
+            balance_due        = None
+            units_this_month   = 1 if has_period else None
+            accrued_this_month = rate if has_period else None
         else:
-            total_accrued = rate * wl_service.get_total_units(r["id"])
-            balance_due   = total_accrued - total_paid
+            total_accrued      = rate * wl_service.get_total_units(r["id"])
+            balance_due        = total_accrued - total_paid
+            units_this_month   = wl_service.get_monthly_units(r["id"], month, year) if has_period else None
+            accrued_this_month = rate * units_this_month if has_period else None
 
         result.append({
-            "id":               r["id"],
-            "employee_name":    r["employee_name"],
-            "salary_type":      salary_type,
-            "rate":             rate,
-            "units":            0,
-            "paid_this_month":  False,
-            "calculation_type": r.get("calculation_type") or "manual",
-            "role":             r.get("role") or "",
-            "is_active":        r.get("is_active", True),
-            "total_accrued":    total_accrued,
-            "total_paid":       total_paid,
-            "balance_due":      balance_due,
+            "id":                 r["id"],
+            "employee_name":      r["employee_name"],
+            "salary_type":        salary_type,
+            "rate":               rate,
+            "calculation_type":   r.get("calculation_type") or "manual",
+            "role":               r.get("role") or "",
+            "is_active":          r.get("is_active", True),
+            "total_accrued":      total_accrued,
+            "total_paid":         total_paid,
+            "balance_due":        balance_due,
+            # תלויים בחודש/שנה שהתבקשו — null אם לא צוין חודש, כדי לא לשבור קריאות ישנות (כמו עמוד העובדים)
+            "units_this_month":   units_this_month,
+            "accrued_this_month": accrued_this_month,
+            "paid_this_month":    month_paid_by_employee.get(r["id"], 0) if has_period else None,
         })
     return result
 
