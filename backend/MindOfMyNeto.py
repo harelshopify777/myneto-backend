@@ -136,12 +136,14 @@ class WorkLog:
             self,
             employee_id: int,
             work_date: date,
-            worked: bool
+            worked: bool,
+            units: float = 1
     ):
 
         self.employee_id = employee_id
         self.work_date = work_date
         self.worked = worked
+        self.units = units
 
 
 # =========================
@@ -364,6 +366,24 @@ class WorkLogService:
                 calendar_data[w.work_date.day] = w.worked
 
         return calendar_data
+
+    def get_total_units(self, employee_id):
+        # סה"כ יחידות שנצברו לעובד מאז ומעולם (כל החודשים), לצורך חישוב יתרה לתשלום.
+        # בכוונה נפרד מ-get_monthly_units — לא נוגע בדוחות הקיימים (דשבורד וכו').
+
+        total = 0
+
+        for w in self.worklogs:
+
+            if (
+                    w.employee_id == employee_id
+                    and
+                    w.worked
+            ):
+
+                total += w.units
+
+        return total
 
 
 # =========================

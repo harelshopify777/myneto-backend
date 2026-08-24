@@ -221,7 +221,8 @@ def load_worklogs(user_id: int):
     return [WorkLog(
         employee_id=r["employee_id"],
         work_date=date.fromisoformat(r["work_date"]),
-        worked=r["worked"]
+        worked=r["worked"],
+        units=r.get("units", 1) or 1
     ) for r in rows]
 
 def load_income_tax_payments(user_id: int):
@@ -563,20 +564,46 @@ def get_expenses(user: CurrentUser = Depends(get_current_user)):
 @app.get("/payroll")
 def get_payroll(user: CurrentUser = Depends(get_current_user)):
     rows = db_execute(supabase.table("employees").select("*").eq("user_id", user.id)).data
-    return [
-        {
+
+    # סה"כ ששולם לכל עובד, אי פעם (לא מוגבל לחודש נוכחי) — לצורך יתרה לתשלום
+    payments_rows = db_execute(supabase.table("payroll_payments").select("*").eq("user_id", user.id)).data
+    total_paid_by_employee = {}
+    for pp in payments_rows:
+        eid = pp["employee_id"]
+        total_paid_by_employee[eid] = total_paid_by_employee.get(eid, 0) + float(pp["amount"])
+
+    wl_service = WorkLogService(load_worklogs(user.id))
+
+    result = []
+    for r in rows:
+        rate         = float(r["rate"])
+        salary_type  = r["salary_type"]
+        total_paid   = total_paid_by_employee.get(r["id"], 0)
+
+        if salary_type == "monthly":
+            # עובדים חודשיים: עדיין אין נקודת עיגון (תאריך תחילת עבודה/יתרת פתיחה)
+            # לחישוב צבירה רב-חודשית מדויקת — יתווסף בהמשך.
+            total_accrued = None
+            balance_due   = None
+        else:
+            total_accrued = rate * wl_service.get_total_units(r["id"])
+            balance_due   = total_accrued - total_paid
+
+        result.append({
             "id":               r["id"],
             "employee_name":    r["employee_name"],
-            "salary_type":      r["salary_type"],
-            "rate":             float(r["rate"]),
+            "salary_type":      salary_type,
+            "rate":             rate,
             "units":            0,
             "paid_this_month":  False,
             "calculation_type": r.get("calculation_type") or "manual",
             "role":             r.get("role") or "",
             "is_active":        r.get("is_active", True),
-        }
-        for r in rows
-    ]
+            "total_accrued":    total_accrued,
+            "total_paid":       total_paid,
+            "balance_due":      balance_due,
+        })
+    return result
 
 @app.get("/worklog/{employee_id}")
 def get_worklog(employee_id: int, month: int, year: int, user: CurrentUser = Depends(get_current_user)):
