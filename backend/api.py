@@ -783,6 +783,14 @@ def add_payroll_payment(data: PayrollPaymentIn, user: CurrentUser = Depends(get_
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/payroll-payments/{id}")
+def delete_payroll_payment(id: int, user: CurrentUser = Depends(get_current_user)):
+    try:
+        db_execute(supabase.table("payroll_payments").delete().eq("id", id).eq("user_id", user.id))
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/worklog")
 def add_worklog(data: WorkLogIn, user: CurrentUser = Depends(get_current_user)):
     try:
